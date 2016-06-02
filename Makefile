@@ -1,27 +1,56 @@
 PROJECTNAME = pcl_test
-CPPFLAGS = -g -std=c++11 -Wall
-LDFLAGS = -lboost_system -lboost_thread -L /usr/lib/x86_64-linux-gnu/ -lpcl_common -lpcl_io -lpcl_visualization -lpcl_search -lpcl_features -lpcl_kdtree -lvtkCommonCore-6.2 -lvtkCommonDataModel-6.2 -lvtkRenderingLOD-6.2 -lvtkRenderingCore-6.2 -lvtkCommonMath-6.2 -lvtkFiltersSources-6.2 -lvtkCommonExecutionModel-6.2
+CPPFLAGS = -g -std=c++11
+LDFLAGS =-lboost_system -lboost_thread -lpcl_kdtree -lpcl_search -lpcl_common -lpcl_io -lpcl_visualization -lpcl_filters -lvtkCommonDataModel-6.0 -lvtkCommonCore-6.0 -lvtkCommonMath-6.0 -lvtkRenderingCore-6.0 -lvtkRenderingLOD-6.0
 OBJDIR = obj/
-SRCDIR = src/
-INCDIRS = include/ /usr/include/pcl-1.7/ /usr/include/eigen3/ /usr/include/vtk-6.2/
+SRCDIRS = src test
+INCDIRS = include/ /usr/include/eigen3/ /usr/local/include/pcl-1.7/ /usr/include/vtk-6.0/ /usr/local/cuda/include/
 INC = $(foreach d, $(INCDIRS), -I$d)
 COMPILER = g++
+CUDA_COMPILER = /usr/local/cuda/bin/nvcc
+CUDA_INSTALL_PATH = /usr/local/cuda/
+VPATH = src:test
+DEPDIR := .d
+$(shell mkdir -p $(DEPDIR) >/dev/null)
+DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.Td
+
+POSTCOMPILE = mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d
 
 RM = rm -rf
 
-SRCS = $(shell find $(SRCDIR) -name "*.cpp")
-OBJS = $(addprefix $(OBJDIR),$(subst $(SRCDIR),,$(SRCS:.cpp=.o)))
+SRCS = $(shell find $(SRCDIRS) -name "*.cpp" -o -name "*.cu")
+SRCS1 = $(SRCS:.cu=.o)
+OBJS = $(addprefix $(OBJDIR),$(SRCS1:.cpp=.o))
 
 all: $(PROJECTNAME)
 
 $(PROJECTNAME): $(OBJS)
-		$(COMPILER) $(OBJS) $(LDFLAGS) -o $(PROJECTNAME)
+	@echo Linking $<...
+	@$(COMPILER) $(OBJS) $(LDFLAGS) -o $(PROJECTNAME).run
 
-$(OBJDIR)%.o: $(SRCDIR)%.cpp
-		@mkdir -p $(@D)
-			$(COMPILER) $(CPPFLAGS) $(INC) -c $< -o $@
+
+$(OBJDIR)%.o: %.cpp
+$(OBJDIR)%.o: %.cpp $(DEPDIR)/%.d
+	@echo Compiling $<...
+	@mkdir -p $(@D)
+	@mkdir -p $(DEPDIR)/$(*D)
+	$(COMPILER) $(DEPFLAGS) $(CPPFLAGS) $(INC) -c $< -o $@
+	@$(POSTCOMPILE)
+
+$(OBJDIR)%.o: %.cu
+#$(OBJDIR)%.o: %.cu $(DEPDIR)/%.d
+	@echo Compiling $<...
+	@mkdir -p $(@D)
+	@mkdir -p $(DEPDIR)/$(*D)
+	$(CUDA_COMPILER) $(CPPFLAGS) $(INC) -c $< -o $@
+	$(CUDA_COMPILER) $(CPPFLAGS) $(INC) -E -Xcompiler "-isystem $(CUDA_INSTALL_PATH)/include -MM" $< -o $(DEPDIR)/$*.Td
+	@$(POSTCOMPILE)
+
+$(DEPDIR)/%.d: ;
+.PRECIOUS: $(DEPDIR)/%.d
+
+-include $(patsubst %,$(DEPDIR)/%.d,$(basename $(SRCS)))
 
 clean:
-		$(RM) $(OBJDIR)* $(PROJECTNAME)
+		$(RM) $(OBJDIR)* $(PROJECTNAME) $(DEPDIR)/*
 
 clear: clean $(PCA_ICP)
